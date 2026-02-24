@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { printMinimalPanel, getExtensionRoot } from '../services/pickle-utils.js';
+import { resolveSessionPath } from '../services/session-state.js';
 
 function main() {
   const args = process.argv.slice(2);
@@ -15,11 +15,7 @@ function main() {
   }
 
   if (!sessionPath || !fs.existsSync(sessionPath)) {
-    const SESSIONS_MAP = path.join(getExtensionRoot(), 'current_sessions.json');
-    if (fs.existsSync(SESSIONS_MAP)) {
-      const map = JSON.parse(fs.readFileSync(SESSIONS_MAP, 'utf-8'));
-      sessionPath = map[process.cwd()] || '';
-    }
+    sessionPath = resolveSessionPath(getExtensionRoot(), process.cwd()) || '';
   }
 
   if (!sessionPath || !fs.existsSync(sessionPath)) {

@@ -1,7 +1,9 @@
+export type PickleStep = 'prd' | 'breakdown' | 'research' | 'plan' | 'implement' | 'refactor' | 'done';
+
 export interface State {
   active: boolean;
   working_dir: string;
-  step: string;
+  step: PickleStep | string;
   iteration: number;
   max_iterations: number;
   max_time_minutes: number;

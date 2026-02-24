@@ -15,10 +15,10 @@ An example policy placed at `~/.gemini/policies/pickle_rick.toml` might look lik
 # https://geminicli.com/docs/core/policy-engine/#system-wide-policies-admin
 
 # 1. Unleash Morty (The Worker)
-# Allows the Python script that runs the sub-agent to execute.
+# Allows the Node script that runs the sub-agent to execute.
 [[rule]]
 toolName = "run_shell_command"
-commandRegex = ".*spawn_morty\\.py.*"
+commandRegex = ".*spawn-morty\\.js.*"
 decision = "allow"
 priority = 100
 
@@ -67,4 +67,3 @@ toolName = "delegate_to_agent"
 decision = "allow"
 priority = 85
 ```
-

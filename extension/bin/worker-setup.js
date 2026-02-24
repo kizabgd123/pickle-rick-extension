@@ -2,6 +2,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { printMinimalPanel, getExtensionRoot } from '../services/pickle-utils.js';
+import { resolveSessionPath } from '../services/session-state.js';
 function main() {
     const args = process.argv.slice(2);
     let sessionPath = '';
@@ -11,11 +12,7 @@ function main() {
         sessionPath = args[resumeIndex + 1];
     }
     if (!sessionPath || !fs.existsSync(sessionPath)) {
-        const SESSIONS_MAP = path.join(getExtensionRoot(), 'current_sessions.json');
-        if (fs.existsSync(SESSIONS_MAP)) {
-            const map = JSON.parse(fs.readFileSync(SESSIONS_MAP, 'utf-8'));
-            sessionPath = map[process.cwd()] || '';
-        }
+        sessionPath = resolveSessionPath(getExtensionRoot(), process.cwd()) || '';
     }
     if (!sessionPath || !fs.existsSync(sessionPath)) {
         console.error('Worker Error: No session path found.');

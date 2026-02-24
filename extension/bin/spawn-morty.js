@@ -1,124 +1,228 @@
 #!/usr/bin/env node
-import * as fs from 'fs';
-import * as path from 'path';
-import { printMinimalPanel, Style, formatTime, getExtensionRoot, } from '../services/pickle-utils.js';
-import { spawn } from 'child_process';
-async function main() {
-    const args = process.argv.slice(2);
-    if (args.length < 1) {
-        console.log('Usage: node spawn-morty.js <task> --ticket-id <id> --ticket-path <path> [--timeout <sec>] [--output-format <fmt>]');
-        process.exit(1);
+import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { formatTime, getExtensionRoot, printMinimalPanel, Style } from '../services/pickle-utils.js';
+function usage() {
+    return [
+        'Usage:',
+        '  node spawn-morty.js --ticket-id <id> --ticket-path <path> [--ticket-file <file>] [--timeout <sec>] [--output-format <fmt>] [--model <model>] "<task>"',
+        '',
+        'Formats: text | json | stream-json',
+    ].join('\n');
+}
+function parsePositiveInt(flag, value) {
+    if (!value || value.startsWith('-')) {
+        throw new Error(`Missing value for ${flag}`);
     }
-    const task = args[0];
-    const ticketIdIndex = args.indexOf('--ticket-id');
-    const ticketPathIndex = args.indexOf('--ticket-path');
-    const ticketFileIndex = args.indexOf('--ticket-file');
-    const timeoutIndex = args.indexOf('--timeout');
-    const formatIndex = args.indexOf('--output-format');
-    if (ticketIdIndex === -1 || ticketPathIndex === -1) {
-        console.log('Error: --ticket-id and --ticket-path are required.');
-        process.exit(1);
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error(`Invalid value for ${flag}: ${value}`);
     }
-    const ticketId = args[ticketIdIndex + 1];
-    let ticketPath = args[ticketPathIndex + 1];
-    const timeout = timeoutIndex !== -1 ? parseInt(args[timeoutIndex + 1]) : 1200;
-    const outputFormat = formatIndex !== -1 ? args[formatIndex + 1] : 'text';
-    // Read ticket content if provided
-    let ticketContent = '';
-    if (ticketFileIndex !== -1) {
-        const ticketFilePath = args[ticketFileIndex + 1];
-        if (fs.existsSync(ticketFilePath)) {
-            ticketContent = fs.readFileSync(ticketFilePath, 'utf-8');
+    return parsed;
+}
+export function parseSpawnMortyArgs(argv) {
+    let ticketId;
+    let ticketPath;
+    let ticketFile;
+    let timeoutSeconds = 1200;
+    let outputFormat = 'text';
+    let model;
+    const taskParts = [];
+    for (let i = 0; i < argv.length; i++) {
+        const arg = argv[i];
+        if (arg === '--ticket-id') {
+            if (!argv[i + 1] || argv[i + 1].startsWith('-')) {
+                throw new Error('Missing value for --ticket-id');
+            }
+            ticketId = argv[++i];
+            continue;
         }
+        if (arg === '--ticket-path') {
+            if (!argv[i + 1] || argv[i + 1].startsWith('-')) {
+                throw new Error('Missing value for --ticket-path');
+            }
+            ticketPath = argv[++i];
+            continue;
+        }
+        if (arg === '--ticket-file') {
+            if (!argv[i + 1] || argv[i + 1].startsWith('-')) {
+                throw new Error('Missing value for --ticket-file');
+            }
+            ticketFile = argv[++i];
+            continue;
+        }
+        if (arg === '--timeout') {
+            timeoutSeconds = parsePositiveInt(arg, argv[i + 1]);
+            i++;
+            continue;
+        }
+        if (arg === '--output-format') {
+            const value = argv[++i];
+            if (!value || value.startsWith('-')) {
+                throw new Error('Missing value for --output-format');
+            }
+            if (value !== 'text' && value !== 'json' && value !== 'stream-json') {
+                throw new Error(`Invalid --output-format value: ${value}`);
+            }
+            outputFormat = value;
+            continue;
+        }
+        if (arg === '--model') {
+            if (!argv[i + 1] || argv[i + 1].startsWith('-')) {
+                throw new Error('Missing value for --model');
+            }
+            model = argv[++i];
+            continue;
+        }
+        if (arg.startsWith('--')) {
+            throw new Error(`Unknown option: ${arg}`);
+        }
+        taskParts.push(arg);
     }
-    // Normalize path
-    if (ticketPath.endsWith('.md') ||
-        (fs.existsSync(ticketPath) && fs.statSync(ticketPath).isFile())) {
-        ticketPath = path.dirname(ticketPath);
+    if (!ticketId || !ticketPath) {
+        throw new Error('--ticket-id and --ticket-path are required.');
     }
-    fs.mkdirSync(ticketPath, { recursive: true });
-    const sessionLog = path.join(ticketPath, `worker_session_${process.pid}.log`);
-    // --- Timeout Logic ---
-    let effectiveTimeout = timeout;
-    const sessionRoot = path.dirname(ticketPath);
-    const parentState = path.join(sessionRoot, 'state.json');
-    const workerState = path.join(ticketPath, 'state.json');
+    const task = taskParts.join(' ').trim();
+    if (!task) {
+        throw new Error('Task description is required as a positional argument.');
+    }
+    return {
+        task,
+        ticketId,
+        ticketPath,
+        ticketFile,
+        timeoutSeconds,
+        outputFormat,
+        model,
+    };
+}
+function detectQuotaExhausted(output) {
+    return /quota\s+exhausted|resource[_\s-]?exhausted|insufficient\s+quota|rate\s+limit|429/i.test(output);
+}
+function readTicketContent(ticketFile) {
+    if (!ticketFile || !fs.existsSync(ticketFile)) {
+        return '';
+    }
+    try {
+        return fs.readFileSync(ticketFile, 'utf8');
+    }
+    catch {
+        return '';
+    }
+}
+function extractMortyPromptBase(extensionRoot) {
+    const tomlPath = path.join(extensionRoot, 'commands', 'send-to-morty.toml');
+    const fallback = '# **TASK REQUEST**\n$ARGUMENTS\n\nYou are a Morty Worker. Implement the request above.';
+    if (!fs.existsSync(tomlPath)) {
+        return fallback;
+    }
+    try {
+        const content = fs.readFileSync(tomlPath, 'utf8');
+        const match = content.match(/prompt = """([\s\S]*?)"""/);
+        return match?.[1]?.trim() || fallback;
+    }
+    catch {
+        return fallback;
+    }
+}
+function clampWorkerTimeout(requestedTimeout, parentStatePath, workerStatePath) {
     let timeoutStatePath = null;
-    if (fs.existsSync(parentState)) {
-        timeoutStatePath = parentState;
+    if (fs.existsSync(parentStatePath)) {
+        timeoutStatePath = parentStatePath;
     }
-    else if (fs.existsSync(workerState)) {
-        timeoutStatePath = workerState;
+    else if (fs.existsSync(workerStatePath)) {
+        timeoutStatePath = workerStatePath;
     }
-    if (timeoutStatePath) {
-        try {
-            const state = JSON.parse(fs.readFileSync(timeoutStatePath, 'utf-8'));
-            const maxMins = state.max_time_minutes || 0;
-            const startEpoch = state.start_time_epoch || 0;
-            if (maxMins > 0 && startEpoch > 0) {
-                const remaining = maxMins * 60 - (Date.now() / 1000 - startEpoch);
-                if (remaining < effectiveTimeout) {
-                    effectiveTimeout = Math.max(10, Math.floor(remaining));
-                    console.log(`${Style.YELLOW}⚠️  Worker timeout clamped: ${effectiveTimeout}s${Style.RESET}`);
-                }
+    if (!timeoutStatePath) {
+        return { effectiveTimeout: requestedTimeout, timeoutStatePath: null };
+    }
+    try {
+        const state = JSON.parse(fs.readFileSync(timeoutStatePath, 'utf8'));
+        const maxMins = typeof state.max_time_minutes === 'number' ? state.max_time_minutes : 0;
+        const startEpoch = typeof state.start_time_epoch === 'number' ? state.start_time_epoch : 0;
+        if (maxMins > 0 && startEpoch > 0) {
+            const remainingSeconds = Math.floor(maxMins * 60 - (Date.now() / 1000 - startEpoch));
+            if (remainingSeconds < requestedTimeout) {
+                const effectiveTimeout = Math.max(10, remainingSeconds);
+                return { effectiveTimeout, timeoutStatePath };
             }
         }
-        catch (e) {
-            // Ignore
-        }
     }
+    catch {
+        // Ignore malformed state and fall back to requested timeout.
+    }
+    return { effectiveTimeout: requestedTimeout, timeoutStatePath };
+}
+function normalizeTicketPath(inputPath) {
+    const resolved = path.resolve(inputPath);
+    if (resolved.endsWith('.md') || (fs.existsSync(resolved) && fs.statSync(resolved).isFile())) {
+        return path.dirname(resolved);
+    }
+    return resolved;
+}
+async function main() {
+    let parsed;
+    try {
+        parsed = parseSpawnMortyArgs(process.argv.slice(2));
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`${Style.RED}❌ ${message}${Style.RESET}`);
+        console.error(usage());
+        process.exit(1);
+        return;
+    }
+    const ticketPath = normalizeTicketPath(parsed.ticketPath);
+    fs.mkdirSync(ticketPath, { recursive: true });
+    const sessionRoot = path.dirname(ticketPath);
+    const parentStatePath = path.join(sessionRoot, 'state.json');
+    const workerStatePath = path.join(ticketPath, 'state.json');
+    const { effectiveTimeout, timeoutStatePath } = clampWorkerTimeout(parsed.timeoutSeconds, parentStatePath, workerStatePath);
+    if (effectiveTimeout !== parsed.timeoutSeconds) {
+        console.log(`${Style.YELLOW}⚠️  Worker timeout clamped: ${effectiveTimeout}s${Style.RESET}`);
+    }
+    const sessionLog = path.join(ticketPath, `worker_session_${process.pid}.log`);
     printMinimalPanel('Spawning Morty Worker', {
-        Request: task,
-        Ticket: ticketId,
-        Format: outputFormat,
-        Timeout: `${effectiveTimeout}s (Req: ${timeout}s)`,
+        Request: parsed.task,
+        Ticket: parsed.ticketId,
+        Format: parsed.outputFormat,
+        Timeout: `${effectiveTimeout}s (Req: ${parsed.timeoutSeconds}s)`,
+        Model: parsed.model || 'default',
         PID: process.pid,
     }, 'CYAN', '🥒');
     const extensionRoot = getExtensionRoot();
     const includes = [extensionRoot, path.join(extensionRoot, 'skills'), ticketPath];
     const cmdArgs = ['-s', '-y'];
-    for (const p of includes) {
-        if (fs.existsSync(p)) {
-            cmdArgs.push('--include-directories', p);
+    for (const include of includes) {
+        if (fs.existsSync(include)) {
+            cmdArgs.push('--include-directories', include);
         }
     }
-    if (outputFormat !== 'text') {
-        cmdArgs.push('-o', outputFormat);
+    if (parsed.outputFormat !== 'text') {
+        cmdArgs.push('-o', parsed.outputFormat);
     }
-    // Prompt Construction
-    const tomlPath = path.join(extensionRoot, 'commands/send-to-morty.toml');
-    let basePrompt = '# **TASK REQUEST**\n$ARGUMENTS\n\nYou are a Morty Worker. Implement the request above.';
-    try {
-        if (fs.existsSync(tomlPath)) {
-            const content = fs.readFileSync(tomlPath, 'utf-8');
-            const match = content.match(/prompt = """([\s\S]*?)"""/);
-            if (match) {
-                basePrompt = match[1].trim();
-            }
-        }
+    if (parsed.model) {
+        cmdArgs.push('--model', parsed.model);
     }
-    catch (e) {
-        console.log(`${Style.YELLOW}⚠️ Failed to load prompt: ${e}. Using fallback.${Style.RESET}`);
-    }
-    let workerPrompt = basePrompt.replace(/\${extensionPath}/g, extensionRoot);
-    workerPrompt = workerPrompt.replace(/\$ARGUMENTS/g, task);
-    // Inject Ticket Context
+    let workerPrompt = extractMortyPromptBase(extensionRoot).replace(/\${extensionPath}/g, extensionRoot);
+    workerPrompt = workerPrompt.replace(/\$ARGUMENTS/g, parsed.task);
+    const ticketContent = readTicketContent(parsed.ticketFile);
     workerPrompt += `\n\n# TARGET TICKET CONTENT\n${ticketContent || 'N/A'}`;
-    workerPrompt += `\n\n# EXECUTION CONTEXT\n- SESSION_ROOT: ${sessionRoot}\n- TICKET_ID: ${ticketId}\n- TICKET_DIR: ${ticketPath}`;
+    workerPrompt += `\n\n# EXECUTION CONTEXT\n- SESSION_ROOT: ${sessionRoot}\n- TICKET_ID: ${parsed.ticketId}\n- TICKET_DIR: ${ticketPath}`;
     workerPrompt +=
         '\n\n**IMPORTANT**: You are a localized worker. You are FORBIDDEN from working on ANY other tickets. Once you output `<promise>I AM DONE</promise>`, you MUST STOP and let the manager take over.';
     if (workerPrompt.length < 500) {
         workerPrompt +=
-            '\n\n1. Activate persona: `activate_skill("load-pickle-persona")`.\n2. Follow \'Rick Loop\' philosophy.\n3. Output: <promise>I AM DONE</promise>';
+            '\n\n1. Activate persona: `activate_skill("load-pickle-persona")`.\n2. Follow the Rick Loop lifecycle.\n3. Output: <promise>I AM DONE</promise>';
     }
     cmdArgs.push('-p', workerPrompt);
-    const logStream = fs.createWriteStream(sessionLog, { flags: 'w' });
     const env = {
         ...process.env,
-        PICKLE_STATE_FILE: timeoutStatePath || workerState,
+        PICKLE_STATE_FILE: timeoutStatePath || workerStatePath,
         PICKLE_ROLE: 'worker',
-        PYTHONUNBUFFERED: '1',
     };
+    const logStream = fs.createWriteStream(sessionLog, { flags: 'w' });
     const proc = spawn('gemini', cmdArgs, {
         cwd: process.cwd(),
         env,
@@ -127,36 +231,61 @@ async function main() {
     proc.stdout?.pipe(logStream);
     proc.stderr?.pipe(logStream);
     const spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    let idx = 0;
     const startTime = Date.now();
-    const interval = setInterval(() => {
+    let spinnerIdx = 0;
+    let timedOut = false;
+    const spinnerTimer = setInterval(() => {
         const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        const spinChar = spinner[idx % spinner.length];
+        const spinChar = spinner[spinnerIdx % spinner.length];
         process.stdout.write(`\r   ${Style.CYAN}${spinChar}${Style.RESET} Worker Active... ${Style.DIM}[${formatTime(elapsed)}]${Style.RESET}\x1b[K`);
-        idx++;
+        spinnerIdx++;
     }, 100);
     const timeoutHandle = setTimeout(() => {
+        timedOut = true;
         proc.kill();
         console.log(`\n${Style.RED}❌ Worker timed out after ${effectiveTimeout}s${Style.RESET}`);
     }, effectiveTimeout * 1000);
-    return new Promise((resolve) => {
-        proc.on('close', (code) => {
-            clearInterval(interval);
-            clearTimeout(timeoutHandle);
-            process.stdout.write('\r\x1b[K');
-            const logContent = fs.readFileSync(sessionLog, 'utf-8');
-            const isSuccess = logContent.includes('<promise>I AM DONE</promise>');
-            printMinimalPanel('Worker Report', {
-                status: `exit:${code}`,
-                validation: isSuccess ? 'successful' : 'failed',
-            }, isSuccess ? 'GREEN' : 'RED', '🥒');
-            if (!isSuccess)
-                process.exit(1);
-            resolve();
-        });
+    proc.on('close', (code) => {
+        clearInterval(spinnerTimer);
+        clearTimeout(timeoutHandle);
+        process.stdout.write('\r\x1b[K');
+        logStream.end();
+        const output = fs.existsSync(sessionLog) ? fs.readFileSync(sessionLog, 'utf8') : '';
+        const hasDonePromise = output.includes('<promise>I AM DONE</promise>');
+        const quotaExhausted = detectQuotaExhausted(output);
+        let exitCode = 0;
+        let validation = 'successful';
+        let status = `exit:${code ?? 0}`;
+        if (timedOut) {
+            exitCode = 124;
+            validation = 'timeout';
+            status = 'timeout';
+        }
+        else if (hasDonePromise) {
+            exitCode = 0;
+            validation = 'successful';
+        }
+        else if (quotaExhausted) {
+            exitCode = 78;
+            validation = 'quota-exhausted';
+            status = 'quota-exhausted';
+            console.log(`${Style.YELLOW}QUOTA EXHAUSTED${Style.RESET}`);
+        }
+        else {
+            exitCode = 1;
+            validation = 'failed';
+        }
+        printMinimalPanel('Worker Report', {
+            status,
+            validation,
+        }, exitCode === 0 ? 'GREEN' : 'RED', '🥒');
+        process.exit(exitCode);
     });
 }
-main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-});
+if (process.argv[1] && path.basename(process.argv[1]).startsWith('spawn-morty')) {
+    main().catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`${Style.RED}❌ ${message}${Style.RESET}`);
+        process.exit(1);
+    });
+}

@@ -1,40 +1,107 @@
 #!/usr/bin/env node
-import * as fs from 'fs';
 import * as path from 'path';
+
+import { readStateFile, writeStateFile } from '../services/session-state.js';
+import type { PickleStep, State } from '../types/index.js';
+
+const STEP_VALUES: PickleStep[] = [
+  'prd',
+  'breakdown',
+  'research',
+  'plan',
+  'implement',
+  'refactor',
+  'done',
+];
+
+const NUMERIC_KEYS = new Set([
+  'iteration',
+  'max_iterations',
+  'max_time_minutes',
+  'worker_timeout_seconds',
+  'start_time_epoch',
+]);
+
+const BOOLEAN_KEYS = new Set(['active', 'jar_complete', 'worker']);
+const NULLABLE_KEYS = new Set(['completion_promise', 'current_ticket']);
+const STRING_KEYS = new Set(['step', 'working_dir', 'original_prompt']);
+
+function parseStateValue(key: string, rawValue: string): string | number | boolean | null {
+  if (NULLABLE_KEYS.has(key) && rawValue === 'null') {
+    return null;
+  }
+
+  if (BOOLEAN_KEYS.has(key)) {
+    if (rawValue === 'true') return true;
+    if (rawValue === 'false') return false;
+    throw new Error(`Expected boolean value for ${key}. Use true or false.`);
+  }
+
+  if (NUMERIC_KEYS.has(key)) {
+    const parsed = Number.parseInt(rawValue, 10);
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`Expected numeric value for ${key}. Received: ${rawValue}`);
+    }
+    return parsed;
+  }
+
+  if (key === 'step') {
+    if (!STEP_VALUES.includes(rawValue as PickleStep)) {
+      throw new Error(`Invalid step "${rawValue}". Allowed values: ${STEP_VALUES.join(', ')}`);
+    }
+    return rawValue;
+  }
+
+  if (STRING_KEYS.has(key) || NULLABLE_KEYS.has(key)) {
+    return rawValue;
+  }
+
+  throw new Error(
+    `Unsupported key "${key}". Allowed keys: ${[
+      ...NUMERIC_KEYS,
+      ...BOOLEAN_KEYS,
+      ...NULLABLE_KEYS,
+      ...STRING_KEYS,
+    ].join(', ')}`
+  );
+}
 
 /**
  * Usage: node update-state.js <key> <value> <session_dir>
  */
-
-export function updateState(key: string, value: string, sessionDir: string) {
+export function updateState(key: string, rawValue: string, sessionDir: string): void {
   const statePath = path.join(sessionDir, 'state.json');
-
-  if (!fs.existsSync(statePath)) {
+  const state = readStateFile(statePath);
+  if (!state) {
     throw new Error(`state.json not found at ${statePath}`);
   }
 
-  const state: any = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+  const value = parseStateValue(key, rawValue);
 
-  // Handle nested keys if needed (e.g. step, current_ticket)
-  // For now, keep it simple for flat top-level keys
-  state[key] = value;
+  const nextState: State = {
+    ...state,
+    [key]: value,
+  } as State;
 
-  fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
-  console.log(`Successfully updated ${key} to ${value} in ${statePath}`);
+  writeStateFile(statePath, nextState);
+  console.log(`Successfully updated ${key} to ${String(value)} in ${statePath}`);
 }
 
 if (process.argv[1] && path.basename(process.argv[1]).startsWith('update-state')) {
   const [key, value, sessionDir] = process.argv.slice(2);
 
-  if (!key || !value || !sessionDir) {
+  if (!key || value == null || !sessionDir) {
     console.error('Usage: node update-state.js <key> <value> <session_dir>');
     process.exit(1);
   }
 
   try {
     updateState(key, value, sessionDir);
-  } catch (err: any) {
-    console.error(`Failed to update state: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to update state: ${message}`);
     process.exit(1);
   }
 }
+
+export { parseStateValue };

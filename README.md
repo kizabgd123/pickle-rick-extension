@@ -56,7 +56,7 @@ This plugin implements the loop using a **AfterAgent hook** that intercepts Gemi
 # 5. Repeat until completion
 ```
 
-The loop happens inside your current session - you don't need external bash loops. The AfterAgent hook in `hooks/stop-hook.js` creates the self-referential feedback loop by blocking normal session exit.
+The loop happens inside your current session - you don't need external bash loops. The AfterAgent hook handler in `extension/hooks/handlers/stop-hook.js` creates the self-referential feedback loop by blocking normal session exit.
 
 This creates a self-referential feedback loop where:
 - The prompt never changes between iterations (ensuring focus).

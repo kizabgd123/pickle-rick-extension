@@ -1,97 +1,87 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
-import { fileURLToPath } from 'node:url';
-import { State } from '../../types/index.js';
-async function main() {
-  const extensionDir =
-    process.env.EXTENSION_DIR || path.join(os.homedir(), '.gemini/extensions/pickle-rick');
+import * as path from 'node:path';
+
+import { evaluateLoopLimits } from '../../services/loop-limits.js';
+import {
+  isSamePathOrDescendant,
+  readStateFile,
+  resolveStateFilePath,
+  writeStateFile,
+} from '../../services/session-state.js';
+
+function createLogger(extensionDir: string, sessionDir?: string) {
   const globalDebugLog = path.join(extensionDir, 'debug.log');
+  const sessionHooksLog = sessionDir ? path.join(sessionDir, 'hooks.log') : null;
 
-  let sessionHooksLog: string | null = null;
-
-  const log = (msg: string) => {
-    const ts = new Date().toISOString();
-    const formatted = `[${ts}] [CheckLimitJS] ${msg}\n`;
+  return (level: 'INFO' | 'WARN' | 'ERROR', message: string) => {
+    const line = `[${new Date().toISOString()}] [CheckLimitJS] [${level}] ${message}\n`;
     try {
-      fs.appendFileSync(globalDebugLog, formatted);
+      fs.appendFileSync(globalDebugLog, line);
     } catch {
-      /* ignore */
+      // Ignore logging failures.
     }
     if (sessionHooksLog) {
       try {
-        fs.appendFileSync(sessionHooksLog, formatted);
+        fs.appendFileSync(sessionHooksLog, line);
       } catch {
-        /* ignore */
+        // Ignore logging failures.
       }
     }
   };
+}
 
-  // 1. Determine State File
-  let stateFile = process.env.PICKLE_STATE_FILE;
+async function main() {
+  const extensionDir =
+    process.env.EXTENSION_DIR || path.join(os.homedir(), '.gemini/extensions/pickle-rick');
+
+  const stateFile = resolveStateFilePath(extensionDir, process.cwd(), process.env.PICKLE_STATE_FILE);
   if (!stateFile) {
-    const sessionsMapPath = path.join(extensionDir, 'current_sessions.json');
-    if (fs.existsSync(sessionsMapPath)) {
-      const map = JSON.parse(fs.readFileSync(sessionsMapPath, 'utf8'));
-      const sessionPath = map[process.cwd()];
-      if (sessionPath) stateFile = path.join(sessionPath, 'state.json');
-    }
-  }
-
-  if (!stateFile || !fs.existsSync(stateFile)) {
     console.log(JSON.stringify({ decision: 'allow' }));
     return;
   }
 
-  const state: State = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  const state = readStateFile(stateFile);
+  const log = createLogger(extensionDir, state?.session_dir);
+  if (!state) {
+    log('WARN', `Failed to read state file: ${stateFile}`);
+    console.log(JSON.stringify({ decision: 'allow' }));
+    return;
+  }
 
-  // 2. Check Context
-  if (state.working_dir && path.resolve(state.working_dir) !== path.resolve(process.cwd())) {
+  if (!isSamePathOrDescendant(process.cwd(), state.working_dir)) {
+    log('INFO', `Skipped due to cwd mismatch. cwd=${process.cwd()} working_dir=${state.working_dir}`);
     console.log(JSON.stringify({ decision: 'allow' }));
     return;
   }
 
   if (!state.active) {
+    log('INFO', 'State inactive; allowing.');
     console.log(JSON.stringify({ decision: 'allow' }));
     return;
   }
 
-  sessionHooksLog = path.join(path.dirname(stateFile), 'hooks.log');
-
-  // 3. Check Limits
-  const now = Math.floor(Date.now() / 1000);
-  const elapsedSeconds = now - state.start_time_epoch;
-  const maxTimeSeconds = state.max_time_minutes * 60;
-
-  if (state.jar_complete) {
-    log('Jar complete');
-    console.log(
-      JSON.stringify({ decision: 'deny', continue: false, reason: 'Jar processing complete' })
-    );
+  const limit = evaluateLoopLimits(state);
+  if (!limit.exceeded) {
+    console.log(JSON.stringify({ decision: 'allow' }));
     return;
   }
 
-  if (state.max_time_minutes > 0 && elapsedSeconds >= maxTimeSeconds) {
-    log(`Time limit exceeded: ${elapsedSeconds}/${maxTimeSeconds}s`);
-    console.log(
-      JSON.stringify({ decision: 'deny', continue: false, reason: 'Time limit exceeded' })
-    );
-    return;
+  if (state.active) {
+    state.active = false;
+    writeStateFile(stateFile, state);
   }
 
-  if (state.max_iterations > 0 && state.iteration > state.max_iterations) {
-    log(`Iteration limit exceeded: ${state.iteration}/${state.max_iterations}`);
-    console.log(
-      JSON.stringify({
-        decision: 'deny',
-        continue: false,
-        reason: `Iteration limit exceeded (${state.iteration}/${state.max_iterations})`,
-      })
-    );
-    return;
-  }
-
-  console.log(JSON.stringify({ decision: 'allow' }));
+  const reason = limit.message ?? 'Loop limit reached';
+  log('WARN', reason);
+  console.log(
+    JSON.stringify({
+      decision: 'deny',
+      continue: false,
+      reason,
+      stopReason: reason,
+    })
+  );
 }
 
 main().catch(() => console.log(JSON.stringify({ decision: 'allow' })));

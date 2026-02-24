@@ -1,200 +1,149 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
-import { fileURLToPath } from 'node:url';
-import { State, HookInput } from '../../types/index.js';
+import * as path from 'node:path';
 
-async function main() {
-  const extensionDir =
-    process.env.EXTENSION_DIR || path.join(os.homedir(), '.gemini/extensions/pickle-rick');
+import { evaluateLoopLimits } from '../../services/loop-limits.js';
+import {
+  isSamePathOrDescendant,
+  readStateFile,
+  resolveStateFilePath,
+  writeStateFile,
+} from '../../services/session-state.js';
+import type { HookInput } from '../../types/index.js';
 
+function createLogger(extensionDir: string, sessionDir?: string) {
   const globalDebugLog = path.join(extensionDir, 'debug.log');
+  const sessionHooksLog = sessionDir ? path.join(sessionDir, 'hooks.log') : null;
 
-  let sessionHooksLog: string | null = null;
-
-  const log = (msg: string) => {
-    const ts = new Date().toISOString();
-    const formatted = `[${ts}] [StopHookJS] ${msg}\n`;
+  return (level: 'INFO' | 'WARN' | 'ERROR', message: string) => {
+    const line = `[${new Date().toISOString()}] [StopHookJS] [${level}] ${message}\n`;
     try {
-      fs.appendFileSync(globalDebugLog, formatted);
+      fs.appendFileSync(globalDebugLog, line);
     } catch {
-      /* ignore */
+      // Ignore logging failures.
     }
     if (sessionHooksLog) {
       try {
-        fs.appendFileSync(sessionHooksLog, formatted);
+        fs.appendFileSync(sessionHooksLog, line);
       } catch {
-        /* ignore */
+        // Ignore logging failures.
       }
     }
   };
+}
 
-  // 1. Read Input
-  let inputData = '';
-  try {
-    inputData = fs.readFileSync(0, 'utf8');
-  } catch {
-    log('Failed to read stdin');
-    console.log(JSON.stringify({ decision: 'allow' }));
-    return;
-  }
+function allow(): void {
+  console.log(JSON.stringify({ decision: 'allow' }));
+}
 
-  const input: HookInput = JSON.parse(inputData || '{}');
-  log(`Processing AfterAgent hook. Input size: ${inputData.length}`);
-
-  // 2. Determine State File
-  let stateFile = process.env.PICKLE_STATE_FILE;
-  if (!stateFile) {
-    const sessionsMapPath = path.join(extensionDir, 'current_sessions.json');
-    log(`Checking sessions map at: ${sessionsMapPath}`);
-    if (fs.existsSync(sessionsMapPath)) {
-      const map = JSON.parse(fs.readFileSync(sessionsMapPath, 'utf8'));
-      const sessionPath = map[process.cwd()];
-      log(`Found session path for ${process.cwd()}: ${sessionPath}`);
-      if (sessionPath) stateFile = path.join(sessionPath, 'state.json');
-    }
-  }
-
-  if (!stateFile || !fs.existsSync(stateFile)) {
-    log(`No state file found. (stateFile: ${stateFile})`);
-    console.log(JSON.stringify({ decision: 'allow' }));
-    return;
-  }
-
-  // Initialize session-specific hook log
-  sessionHooksLog = path.join(path.dirname(stateFile), 'hooks.log');
-  log(`State file found: ${stateFile}`);
-
-  // 3. Read State
-  const state: State = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-
-  // 4. Check Context
-  if (state.working_dir && path.resolve(state.working_dir) !== path.resolve(process.cwd())) {
-    log(`CWD Mismatch: ${process.cwd()} !== ${state.working_dir}`);
-    console.log(JSON.stringify({ decision: 'allow' }));
-    return;
-  }
-
-  // 5. Bypass for Workers or Inactive loops
-  const role = process.env.PICKLE_ROLE;
-  const isWorker = role === 'worker' || state.worker;
-
-  log(`State: active=${state.active}, iteration=${state.iteration}/${state.max_iterations}`);
-  log(`Context: role=${role}, isWorker=${isWorker}, cwd=${process.cwd()}`);
-
-  if (!state.active) {
-    log('Decision: ALLOW (Session inactive)');
-    console.log(JSON.stringify({ decision: 'allow' }));
-    return;
-  }
-
-  // 6. Check Completion Promise
-  const responseText = input.prompt_response || '';
-  log(`Agent response preview: ${responseText.slice(0, 100).replace(/\n/g, ' ')}...`);
-
-  const hasPromise =
-    state.completion_promise &&
-    responseText.includes(`<promise>${state.completion_promise}</promise>`);
-
-  // Stop Tokens (Full Exit)
-  const isEpicDone = responseText.includes('<promise>EPIC_COMPLETED</promise>');
-  const isTaskFinished = responseText.includes('<promise>TASK_COMPLETED</promise>');
-
-  // Continue Tokens (Checkpoint)
-  const isWorkerDone = isWorker && responseText.includes('<promise>I AM DONE</promise>');
-  const isPrdDone = !isWorker && responseText.includes('<promise>PRD_COMPLETE</promise>');
-  const isBreakdownDone =
-    !isWorker && responseText.includes('<promise>BREAKDOWN_COMPLETE</promise>');
-  const isTicketSelected = !isWorker && responseText.includes('<promise>TICKET_SELECTED</promise>');
-  const isTicketDone = !isWorker && responseText.includes('<promise>TICKET_COMPLETE</promise>');
-  const isTaskDone = !isWorker && responseText.includes('<promise>TASK_COMPLETE</promise>');
-
-  log(
-    `Promises: hasPromise=${hasPromise}, isEpicDone=${isEpicDone}, isTaskFinished=${isTaskFinished}, isWorkerDone=${isWorkerDone}, isPrdDone=${isPrdDone}, isBreakdownDone=${isBreakdownDone}, isTicketSelected=${isTicketSelected}, isTicketDone=${isTicketDone}, isTaskDone=${isTaskDone}`
-  );
-
-  // EXIT CONDITIONS: Full Exit
-  if (hasPromise || isEpicDone || isTaskFinished || isWorkerDone) {
-    log(`Decision: ALLOW (Task/Worker complete)`);
-    if (!isWorker) {
-      state.active = false;
-      fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
-    }
-    console.log(JSON.stringify({ decision: 'allow' }));
-    return;
-  }
-
-  // CONTINUE CONDITIONS: Block exit to force next iteration
-  if (isTaskDone || isTicketDone || isBreakdownDone || isPrdDone || isTicketSelected) {
-    log(`Decision: BLOCK (Checkpoint reached)`);
-
-    let feedback = '🥒 **Pickle Rick Loop Active** - ';
-    if (isPrdDone) feedback += 'PRD finished, moving to breakdown...';
-    if (isBreakdownDone) feedback += 'Breakdown finished, moving to implementation...';
-    if (isTicketSelected) feedback += 'Ticket selected, starting research...';
-    if (isTaskDone || isTicketDone) feedback += 'Ticket finished, moving to next...';
-    if (isWorkerDone) feedback += 'Worker finished, Rick is validating...';
-
-    console.log(
-      JSON.stringify({
-        decision: 'block',
-        systemMessage: feedback,
-        hookSpecificOutput: {
-          hookEventName: 'AfterAgent',
-          additionalContext: state.original_prompt,
-        },
-      })
-    );
-    return;
-  }
-
-  // 7. Check Limits (Final Guard)
-  const now = Math.floor(Date.now() / 1000);
-  const elapsedSeconds = now - state.start_time_epoch;
-  const maxTimeSeconds = state.max_time_minutes * 60;
-
-  if (state.max_iterations > 0 && state.iteration > state.max_iterations) {
-    log(`Decision: ALLOW (Max iterations reached: ${state.iteration}/${state.max_iterations})`);
-    state.active = false;
-    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
-    console.log(JSON.stringify({ decision: 'allow' }));
-    return;
-  }
-
-  if (state.max_time_minutes > 0 && elapsedSeconds >= maxTimeSeconds) {
-    log(`Decision: ALLOW (Time limit reached: ${elapsedSeconds}/${maxTimeSeconds}s)`);
-    state.active = false;
-    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
-    console.log(JSON.stringify({ decision: 'allow' }));
-    return;
-  }
-
-  // 8. Default: Continue Loop (Prevent Exit)
-  log('Decision: BLOCK (Default continuation)');
-
-  let defaultFeedback = `🥒 **Pickle Rick Loop Active** (Iteration ${state.iteration})`;
-  if (state.max_iterations > 0) defaultFeedback += ` of ${state.max_iterations}`;
-
+function block(message: string, additionalContext: string): void {
   console.log(
     JSON.stringify({
       decision: 'block',
-      systemMessage: defaultFeedback,
+      systemMessage: message,
       hookSpecificOutput: {
         hookEventName: 'AfterAgent',
-        additionalContext: state.original_prompt,
+        additionalContext,
       },
     })
   );
 }
 
-main().catch((err) => {
+function readHookInput(): HookInput {
   try {
-    const extensionDir =
-      process.env.EXTENSION_DIR || path.join(os.homedir(), '.gemini/extensions/pickle-rick');
-    const debugLog = path.join(extensionDir, 'debug.log');
-    fs.appendFileSync(debugLog, `[FATAL] ${err.stack}\n`);
+    const raw = fs.readFileSync(0, 'utf8');
+    return JSON.parse(raw || '{}') as HookInput;
   } catch {
-    /* ignore */
+    return {};
   }
-  console.log(JSON.stringify({ decision: 'allow' }));
-});
+}
+
+async function main() {
+  const extensionDir =
+    process.env.EXTENSION_DIR || path.join(os.homedir(), '.gemini/extensions/pickle-rick');
+  const input = readHookInput();
+
+  const stateFile = resolveStateFilePath(extensionDir, process.cwd(), process.env.PICKLE_STATE_FILE);
+  if (!stateFile) {
+    allow();
+    return;
+  }
+
+  const state = readStateFile(stateFile);
+  const log = createLogger(extensionDir, state?.session_dir);
+  if (!state) {
+    log('WARN', `Failed to read state file: ${stateFile}`);
+    allow();
+    return;
+  }
+
+  if (!isSamePathOrDescendant(process.cwd(), state.working_dir)) {
+    log('INFO', `Skipped due to cwd mismatch. cwd=${process.cwd()} working_dir=${state.working_dir}`);
+    allow();
+    return;
+  }
+
+  if (!state.active) {
+    log('INFO', 'Session inactive; allowing stop.');
+    allow();
+    return;
+  }
+
+  const role = process.env.PICKLE_ROLE;
+  const isWorker = role === 'worker' || state.worker === true;
+  const responseText = input.prompt_response || '';
+  const promptContext = state.original_prompt || '';
+
+  const limits = evaluateLoopLimits(state);
+  if (limits.exceeded) {
+    state.active = false;
+    writeStateFile(stateFile, state);
+    log('WARN', limits.message ?? 'Loop limit reached.');
+    allow();
+    return;
+  }
+
+  const hasPromise =
+    !!state.completion_promise &&
+    responseText.includes(`<promise>${state.completion_promise}</promise>`);
+  const isEpicDone = responseText.includes('<promise>EPIC_COMPLETED</promise>');
+  const isTaskFinished = responseText.includes('<promise>TASK_COMPLETED</promise>');
+  const isWorkerDone = isWorker && responseText.includes('<promise>I AM DONE</promise>');
+
+  const isPrdDone = !isWorker && responseText.includes('<promise>PRD_COMPLETE</promise>');
+  const isBreakdownDone = !isWorker && responseText.includes('<promise>BREAKDOWN_COMPLETE</promise>');
+  const isTicketSelected = !isWorker && responseText.includes('<promise>TICKET_SELECTED</promise>');
+  const isTicketDone = !isWorker && responseText.includes('<promise>TICKET_COMPLETE</promise>');
+  const isTaskDone = !isWorker && responseText.includes('<promise>TASK_COMPLETE</promise>');
+
+  if (hasPromise || isEpicDone || isTaskFinished || isWorkerDone) {
+    if (!isWorker) {
+      state.active = false;
+      writeStateFile(stateFile, state);
+    }
+    log('INFO', 'Allowing stop due to completion token.');
+    allow();
+    return;
+  }
+
+  if (isPrdDone || isBreakdownDone || isTicketSelected || isTicketDone || isTaskDone) {
+    let feedback = '🥒 Pickle Rick loop active.';
+    if (isPrdDone) feedback = '🥒 PRD complete. Proceed to Breakdown.';
+    if (isBreakdownDone) feedback = '🥒 Breakdown complete. Proceed to ticket execution.';
+    if (isTicketSelected) feedback = '🥒 Ticket selected. Begin research.';
+    if (isTicketDone || isTaskDone) feedback = '🥒 Ticket complete. Continue with validation or next ticket.';
+    log('INFO', `Blocking stop for checkpoint token. feedback="${feedback}"`);
+    block(feedback, promptContext);
+    return;
+  }
+
+  const iterationSummary =
+    state.max_iterations > 0
+      ? `🥒 Pickle Rick loop active (Iteration ${state.iteration}/${state.max_iterations}).`
+      : `🥒 Pickle Rick loop active (Iteration ${state.iteration}).`;
+
+  log('INFO', 'Blocking stop by default (loop continues).');
+  block(iterationSummary, promptContext);
+}
+
+main().catch(() => allow());

@@ -1,27 +1,32 @@
 #!/usr/bin/env node
-import * as fs from 'fs';
 import * as path from 'path';
-import { printMinimalPanel, getExtensionRoot } from '../services/pickle-utils.js';
+import { getExtensionRoot, printMinimalPanel, Style } from '../services/pickle-utils.js';
+import { isSamePathOrDescendant, readStateFile, resolveSessionPath, writeStateFile, } from '../services/session-state.js';
 export function cancelSession(cwd) {
-    const SESSIONS_MAP = path.join(getExtensionRoot(), 'current_sessions.json');
-    if (!fs.existsSync(SESSIONS_MAP)) {
-        console.log('No active sessions map found.');
-        return;
-    }
-    const map = JSON.parse(fs.readFileSync(SESSIONS_MAP, 'utf-8'));
-    const sessionPath = map[cwd];
-    if (!sessionPath || !fs.existsSync(sessionPath)) {
+    const sessionPath = resolveSessionPath(getExtensionRoot(), cwd);
+    if (!sessionPath) {
         console.log('No active session found for this directory.');
         return;
     }
     const statePath = path.join(sessionPath, 'state.json');
-    if (!fs.existsSync(statePath)) {
+    const state = readStateFile(statePath);
+    if (!state) {
         console.log('State file not found.');
         return;
     }
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+    if (!isSamePathOrDescendant(cwd, state.working_dir)) {
+        console.error(`${Style.RED}❌ Wrong directory. Active session is in ${state.working_dir}.${Style.RESET}`);
+        return;
+    }
+    if (!state.active) {
+        printMinimalPanel('Loop Already Inactive', {
+            Session: path.basename(sessionPath),
+            Status: 'Inactive',
+        }, 'YELLOW', '🛑');
+        return;
+    }
     state.active = false;
-    fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+    writeStateFile(statePath, state);
     printMinimalPanel('Loop Cancelled', {
         Session: path.basename(sessionPath),
         Status: 'Inactive',

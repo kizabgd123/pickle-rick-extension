@@ -29,7 +29,7 @@ node "${extensionPath}/extension/bin/setup.js" $ARGUMENTS
 ```powershell
 node "${extensionPath}/extension/bin/setup.js" $ARGUMENTS
 ```
-**Supported Arguments for setup.sh:**
+**Supported Arguments for setup.js:**
 - `--max-iterations <N>`: Maximum number of loop iterations.
 - `--max-time <MINUTES>`: Maximum duration in minutes.
 - `--worker-timeout <SECONDS>`: Timeout for worker tasks.
@@ -72,7 +72,7 @@ Between each step, you **MUST** explicitly state what you are doing (e.g., "Movi
     *   **Cleanup**: If validation fails, REVERT changes (`git reset --hard`). If it passes, COMMIT changes.
     *   **Quota Errors**:
         * If the worker reports `QUOTA EXHAUSTED`, you MUST ask the user: "You have exceeded your quota on the current model, do you want to spawn Morty using a different model?".
-        * If they provide a model, retry the `spawn_morty.py` command with the `--model <model_name>` flag.
+        * If they provide a model, retry the `spawn-morty.js` command with the `--model <model_name>` flag.
         * If they say no, stop the loop.
     *   **Next Ticket**: Pick the next ticket and repeat.
     *   **FORBIDDEN**: You are strictly FORBIDDEN from deactivating the loop or declaring "Epic Done" if any tickets are still `Todo` or missing lifecycle documentation.

@@ -1,55 +1,55 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
-async function main() {
-    const extensionDir = process.env.EXTENSION_DIR || path.join(os.homedir(), '.gemini/extensions/pickle-rick');
+import * as path from 'node:path';
+import { isSamePathOrDescendant, readStateFile, resolveStateFilePath, writeStateFile, } from '../../services/session-state.js';
+function createLogger(extensionDir, sessionDir) {
     const globalDebugLog = path.join(extensionDir, 'debug.log');
-    let sessionHooksLog = null;
-    const log = (msg) => {
-        const ts = new Date().toISOString();
-        const formatted = `[${ts}] [IncrementIterationJS] ${msg}\n`;
+    const sessionHooksLog = sessionDir ? path.join(sessionDir, 'hooks.log') : null;
+    return (level, message) => {
+        const line = `[${new Date().toISOString()}] [IncrementIterationJS] [${level}] ${message}\n`;
         try {
-            fs.appendFileSync(globalDebugLog, formatted);
+            fs.appendFileSync(globalDebugLog, line);
         }
         catch {
-            /* ignore */
+            // Ignore logging failures.
         }
         if (sessionHooksLog) {
             try {
-                fs.appendFileSync(sessionHooksLog, formatted);
+                fs.appendFileSync(sessionHooksLog, line);
             }
             catch {
-                /* ignore */
+                // Ignore logging failures.
             }
         }
     };
-    // 1. Determine State File
-    let stateFile = process.env.PICKLE_STATE_FILE;
+}
+async function main() {
+    const extensionDir = process.env.EXTENSION_DIR || path.join(os.homedir(), '.gemini/extensions/pickle-rick');
+    const stateFile = resolveStateFilePath(extensionDir, process.cwd(), process.env.PICKLE_STATE_FILE);
     if (!stateFile) {
-        const sessionsMapPath = path.join(extensionDir, 'current_sessions.json');
-        if (fs.existsSync(sessionsMapPath)) {
-            const map = JSON.parse(fs.readFileSync(sessionsMapPath, 'utf8'));
-            const sessionPath = map[process.cwd()];
-            if (sessionPath)
-                stateFile = path.join(sessionPath, 'state.json');
-        }
-    }
-    if (!stateFile || !fs.existsSync(stateFile)) {
         console.log(JSON.stringify({ decision: 'allow' }));
         return;
     }
-    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-    // 2. Check Context
-    if (state.working_dir && path.resolve(state.working_dir) !== path.resolve(process.cwd())) {
+    const state = readStateFile(stateFile);
+    const log = createLogger(extensionDir, state?.session_dir);
+    if (!state) {
+        log('WARN', `Failed to read state file: ${stateFile}`);
+        console.log(JSON.stringify({ decision: 'allow' }));
+        return;
+    }
+    if (!isSamePathOrDescendant(process.cwd(), state.working_dir)) {
+        log('INFO', `Skipped due to cwd mismatch. cwd=${process.cwd()} working_dir=${state.working_dir}`);
         console.log(JSON.stringify({ decision: 'allow' }));
         return;
     }
     const role = process.env.PICKLE_ROLE;
     if (state.active && role !== 'worker') {
-        sessionHooksLog = path.join(path.dirname(stateFile), 'hooks.log');
         state.iteration = (state.iteration || 0) + 1;
-        log(`Incrementing iteration to ${state.iteration}`);
-        fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+        writeStateFile(stateFile, state);
+        log('INFO', `Incremented iteration to ${state.iteration}`);
+    }
+    else {
+        log('INFO', `No increment. active=${state.active} role=${role ?? 'unknown'}`);
     }
     console.log(JSON.stringify({ decision: 'allow' }));
 }

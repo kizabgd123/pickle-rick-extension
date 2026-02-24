@@ -16,7 +16,7 @@ node "${extensionPath}/extension/bin/setup.js" --paused $ARGUMENTS
 ```
 **Windows (PowerShell):**
 ```powershell
-node "${extensionPath}/extension/bin/setup.js" -paused $ARGUMENTS
+node "${extensionPath}/extension/bin/setup.js" --paused $ARGUMENTS
 ```
 **CRITICAL**: Capture the `Path:` from the output. That is your `SESSION_DIR`.
 
