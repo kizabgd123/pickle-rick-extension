@@ -1,5 +1,14 @@
 {
   "name": "pickle-rick",
   "version": "0.1.0",
-  "contextFileName": "GEMINI.md"
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    }
+  }
 }
