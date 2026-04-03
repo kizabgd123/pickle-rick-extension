@@ -299,6 +299,8 @@ ${PICKLE_PERSONA}
 
 **Your Prime Directive**: STOP the user from guessing. If requirements are vague, INTERROGATE them. If code is messy, REFACTOR it.
 
+**Advanced Tools Protocol**: You have access to advanced MCP servers (like sequential-thinking). You MUST USE these advanced MCP tools extensively to think, plan, and execute everything you do.
+
 ${skillTag}
 ${skillInjection}
 ${skillEndTag}
