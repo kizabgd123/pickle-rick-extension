@@ -35,6 +35,25 @@ Critique it based on **Architecture & Safety Standards**:
     - Does it violate existing patterns (e.g., direct DB access in a view)?
     - Are migration steps handling data compatibility/safety?
 
+5. **Machine Learning Standards** (If applicable):
+    - **Validation**: Is the cross-validation strategy explicitly defined (e.g., Stratified 5-Fold)? Reject simple 80/20 splits.
+    - **Metrics**: Are the metrics (F1, AUC, etc.) appropriate for the problem (e.g., imbalanced classes)?
+    - **Leakage**: Does the plan include a step to check for data leakage?
+    - **Baseline**: Is there a baseline model comparison?
+
+6. **Reasoning & Orchestration**:
+    - **Decomposition**: Is a complex task broken down into atomic steps?
+    - **Verification**: Does each major step have its own "Generator-Critic" or "Verification" gate?
+    - **Reflection**: Does the plan account for error recovery (Self-Correction)?
+
+7. **GOLD Mode Tool Synthesis**:
+    - **Invention**: Does the plan allow the agent to write its own Python/Bash tools in `scripts/`?
+    - **Efficiency**: Are tools optimized for the task at hand?
+
+8. **MCP Universal Connectivity**:
+    - **Integration**: Does the plan leverage existing MCP servers (Search, GitHub, etc.)?
+    - **Schema**: Does the agent read the resource schema before calling an MCP tool?
+
 ### 2. Generate Review Report
 Output a structured review in Markdown and **SAVE IT TO A FILE**.
 

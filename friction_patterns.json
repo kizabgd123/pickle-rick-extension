@@ -1,0 +1,68 @@
+{
+  "version": "2.0",
+  "project": "Pickle Rick Extension Core",
+  "patterns": [
+    {
+      "id": "FP_001",
+      "name": "WORK_LOG Gate Failure",
+      "regex": "Nije prona|en 'Starting' ili 'Pokretanje'.*WORK_LOG.md",
+      "category": "guard_failure",
+      "root_cause": "The pipeline attempted to submit without properly declaring intent in WORK_LOG.md as required by Trinity Protocol.",
+      "playbook": [
+        "python scripts/update_worklog.py --status 'Starting' --action 'Pipeline Auto-Heal Injection'",
+        "retry_pipeline"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "FP_002",
+      "name": "Missing Module",
+      "regex": "No module named '([^']+)'",
+      "category": "environment",
+      "root_cause": "A required Python module is missing from PYTHONPATH or not installed.",
+      "playbook": [
+        "pip install {0} || echo 'Ensure local package {0} is in PYTHONPATH'",
+        "export PYTHONPATH=$PYTHONPATH:$(pwd)",
+        "retry_pipeline"
+      ],
+      "severity": "critical"
+    },
+    {
+      "id": "FP_004",
+      "name": "API Authentication Failure",
+      "regex": "(401 Unauthorized|Invalid token|HF_TOKEN not found|Kaggle API key missing)",
+      "category": "auth",
+      "root_cause": "Missing or expired tokens for Kaggle or Hugging Face.",
+      "playbook": [
+        "hf auth login --token $HF_TOKEN",
+        "mkdir -p ~/.kaggle && cp config/kaggle.json ~/.kaggle/kaggle.json",
+        "retry_api_call"
+      ],
+      "severity": "critical"
+    },
+    {
+      "id": "FP_007",
+      "name": "Python Exception (Generic)",
+      "regex": "Traceback \\(most recent call last\\):[\\s\\S]*?(\\w+Error): (.*)",
+      "category": "software",
+      "root_cause": "A Python exception occurred: {0}: {1}",
+      "playbook": [
+        "debug_exception",
+        "retry_pipeline"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "KAG_409",
+      "name": "Kaggle Conflict (Slug Taken)",
+      "regex": "409 - Conflict|already exists",
+      "category": "api",
+      "root_cause": "Kaggle submission slug is already taken.",
+      "playbook": [
+        "bump_version",
+        "retry_pipeline"
+      ],
+      "severity": "medium"
+    }
+  ]
+}

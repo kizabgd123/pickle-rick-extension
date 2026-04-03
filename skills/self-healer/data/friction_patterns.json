@@ -1,0 +1,141 @@
+{
+  "version": "2.0",
+  "skill": "self-healer",
+  "patterns": [
+    {
+      "id": "SH_001",
+      "name": "WORK_LOG Gate Failure",
+      "regex": "Nije prona[đ\\w]*en ['\"]Starting['\"]|Nije prona[đ\\w]*en ['\"]Pokretanje['\"]|Missing ['\"]Starting['\"] in WORK_LOG",
+      "category": "guard_failure",
+      "root_cause": "The pipeline attempted to submit without properly declaring intent in WORK_LOG.md as required by Trinity Protocol.",
+      "playbook": [
+        {"action": "file_edit", "target": "WORK_LOG.md", "operation": "prepend_intent", "intent": "Starting"},
+        {"action": "retry", "max_attempts": 3}
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "SH_002",
+      "name": "Missing Module",
+      "regex": "No module named ['\"]([^'\"]+)['\"]",
+      "category": "environment",
+      "root_cause": "A required Python module is missing from PYTHONPATH or not installed.",
+      "playbook": [
+        {"action": "shell", "command": "pip install {0}"},
+        {"action": "shell", "command": "export PYTHONPATH=$PYTHONPATH:$(pwd)"},
+        {"action": "retry", "max_attempts": 3}
+      ],
+      "severity": "critical"
+    },
+    {
+      "id": "SH_003",
+      "name": "GPU Fallback",
+      "regex": "No GPU detected\\. Using CPU|CUDA out of memory|CUDA error",
+      "category": "hardware",
+      "root_cause": "NVIDIA driver unloaded, CUDA out of memory, or running on a non-GPU node.",
+      "playbook": [
+        {"action": "adjust_timeout", "multiplier": 5},
+        {"action": "log_warning", "message": "Running in CPU mode - extended timeout applied"}
+      ],
+      "severity": "warning"
+    },
+    {
+      "id": "SH_004",
+      "name": "API Authentication Failure",
+      "regex": "(401 Unauthorized|Invalid token|HF_TOKEN not found|Kaggle API key missing|kaggle\\.json not found)",
+      "category": "auth",
+      "root_cause": "Missing or expired tokens for Kaggle or Hugging Face.",
+      "playbook": [
+        {"action": "shell", "command": "mkdir -p ~/.kaggle && cp config/kaggle.json ~/.kaggle/kaggle.json 2>/dev/null || echo 'Kaggle config missing'"},
+        {"action": "verify_env", "vars": ["HF_TOKEN", "KAGGLE_USERNAME", "KAGGLE_KEY"]},
+        {"action": "retry", "max_attempts": 1}
+      ],
+      "severity": "critical"
+    },
+    {
+      "id": "SH_005",
+      "name": "File/Data Missing",
+      "regex": "FileNotFoundError: \\[Errno 2\\] No such file or directory: ['\"]([^'\"]+)['\"]",
+      "category": "environment",
+      "root_cause": "A required file or dataset ({0}) is missing from the expected path.",
+      "playbook": [
+        {"action": "shell", "command": "find . -name '{0}' 2>/dev/null | head -5"},
+        {"action": "shell", "command": "ls -R data/ 2>/dev/null | head -20"},
+        {"action": "retry", "max_attempts": 3}
+      ],
+      "severity": "critical"
+    },
+    {
+      "id": "SH_006",
+      "name": "Anti-Simulation Violation",
+      "regex": "ANTI_SIM_BLOCK: violations=\\[(['\"][^'\"]+['\"])\\]",
+      "category": "validation",
+      "root_cause": "The agent attempted to simulate a result ({0}) without actual execution evidence.",
+      "playbook": [
+        {"action": "shell", "command": "python core/anti_simulation.py --audit --fix {0}"},
+        {"action": "retry", "max_attempts": 2}
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "SH_007",
+      "name": "Python Exception (Generic)",
+      "regex": "Traceback \\(most recent call last\\):[\\s\\S]*?(\\w+Error): (.*)",
+      "category": "software",
+      "root_cause": "A Python exception occurred: {0}: {1}",
+      "playbook": [
+        {"action": "invoke_skill", "skill": "code-debugger", "context": "Fix: {0}: {1}"},
+        {"action": "retry", "max_attempts": 3}
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "SH_008",
+      "name": "Git Conflict",
+      "regex": "(error: Your changes would be overwritten|CONFLICT|merge conflict)",
+      "category": "version_control",
+      "root_cause": "Uncommitted changes or merge conflict in git repository.",
+      "playbook": [
+        {"action": "shell", "command": "git stash push -m 'auto-stash by self-healer'"},
+        {"action": "retry", "max_attempts": 1}
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "SH_009",
+      "name": "Memory/Resource Exhausted",
+      "regex": "(Killed|OOM|out of memory|MemoryError|ResourceWarning)",
+      "category": "hardware",
+      "root_cause": "Process exceeded available memory or system resources.",
+      "playbook": [
+        {"action": "adjust_timeout", "multiplier": 2},
+        {"action": "log_warning", "message": "Memory pressure detected - consider batch processing"},
+        {"action": "retry", "max_attempts": 1}
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "SH_010",
+      "name": "Permission Denied",
+      "regex": "PermissionError: \\[Errno 13\\] Permission denied: ['\"]([^'\"]+)['\"]",
+      "category": "environment",
+      "root_cause": "Insufficient permissions to access {0}.",
+      "playbook": [
+        {"action": "shell", "command": "chmod +rw {0} 2>/dev/null || echo 'Permission fix failed'"},
+        {"action": "retry", "max_attempts": 1}
+      ],
+      "severity": "medium"
+    }
+  ],
+  "detection_logic": {
+    "timeout_seconds": 300,
+    "max_retries_global": 3,
+    "backoff_base_seconds": 2,
+    "escalation_threshold": 3
+  },
+  "escalation_rules": {
+    "deadlock_keywords": ["deadlock", "unfixable", "manual intervention required"],
+    "notify_user_on": ["critical", "high"],
+    "auto_resolve_categories": ["environment", "guard_failure", "version_control"]
+  }
+}
