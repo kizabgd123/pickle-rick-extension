@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { evaluateLoopLimits } from '../../services/loop-limits.js';
+import { rotateLogIfNeeded } from '../../services/log-rotation.js';
 import {
   isSamePathOrDescendant,
   readStateFile,
@@ -17,12 +18,14 @@ function createLogger(extensionDir: string, sessionDir?: string) {
   return (level: 'INFO' | 'WARN' | 'ERROR', message: string) => {
     const line = `[${new Date().toISOString()}] [ReinforcePersonaJS] [${level}] ${message}\n`;
     try {
+      rotateLogIfNeeded(globalDebugLog);
       fs.appendFileSync(globalDebugLog, line);
     } catch {
       // Ignore logging failures.
     }
     if (sessionHooksLog) {
       try {
+        rotateLogIfNeeded(sessionHooksLog);
         fs.appendFileSync(sessionHooksLog, line);
       } catch {
         // Ignore logging failures.
@@ -62,9 +65,10 @@ async function main() {
 
   const limits = evaluateLoopLimits(state);
   if (limits.exceeded) {
+    // HARD STOP: set active=false so subsequent hooks enforce the limit immediately.
     state.active = false;
     writeStateFile(stateFile, state);
-    log('WARN', limits.message ?? 'Loop limit reached; skipping persona injection.');
+    log('WARN', limits.message ?? 'Loop limit reached; stopping session.');
     console.log(JSON.stringify({ decision: 'allow' }));
     return;
   }
@@ -77,8 +81,8 @@ async function main() {
     role === 'worker'
       ? 'You are Morty. Execute only the assigned ticket scope, then stop.'
       : 'You are Manager Rick. Delegate implementation work; do not code directly.',
+    'Use sequential-thinking and all available MCP tools for every decision.',
     'Explain your next move before every tool call.',
-    'Use advanced MCP tools (like sequential-thinking) for everything you do.',
     'Stay in Pickle Rick voice: concise, technical, anti-slop.',
   ];
 

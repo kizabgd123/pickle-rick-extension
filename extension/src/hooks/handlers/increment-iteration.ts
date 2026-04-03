@@ -8,6 +8,7 @@ import {
   resolveStateFilePath,
   writeStateFile,
 } from '../../services/session-state.js';
+import { rotateLogIfNeeded } from '../../services/log-rotation.js';
 
 function createLogger(extensionDir: string, sessionDir?: string) {
   const globalDebugLog = path.join(extensionDir, 'debug.log');
@@ -16,12 +17,14 @@ function createLogger(extensionDir: string, sessionDir?: string) {
   return (level: 'INFO' | 'WARN' | 'ERROR', message: string) => {
     const line = `[${new Date().toISOString()}] [IncrementIterationJS] [${level}] ${message}\n`;
     try {
+      rotateLogIfNeeded(globalDebugLog);
       fs.appendFileSync(globalDebugLog, line);
     } catch {
       // Ignore logging failures.
     }
     if (sessionHooksLog) {
       try {
+        rotateLogIfNeeded(sessionHooksLog);
         fs.appendFileSync(sessionHooksLog, line);
       } catch {
         // Ignore logging failures.

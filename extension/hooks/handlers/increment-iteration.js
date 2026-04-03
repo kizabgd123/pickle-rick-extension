@@ -2,12 +2,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { isSamePathOrDescendant, readStateFile, resolveStateFilePath, writeStateFile, } from '../../services/session-state.js';
+import { rotateLogIfNeeded } from '../../services/log-rotation.js';
 function createLogger(extensionDir, sessionDir) {
     const globalDebugLog = path.join(extensionDir, 'debug.log');
     const sessionHooksLog = sessionDir ? path.join(sessionDir, 'hooks.log') : null;
     return (level, message) => {
         const line = `[${new Date().toISOString()}] [IncrementIterationJS] [${level}] ${message}\n`;
         try {
+            rotateLogIfNeeded(globalDebugLog);
             fs.appendFileSync(globalDebugLog, line);
         }
         catch {
@@ -15,6 +17,7 @@ function createLogger(extensionDir, sessionDir) {
         }
         if (sessionHooksLog) {
             try {
+                rotateLogIfNeeded(sessionHooksLog);
                 fs.appendFileSync(sessionHooksLog, line);
             }
             catch {

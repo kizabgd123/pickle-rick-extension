@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { evaluateLoopLimits } from '../../services/loop-limits.js';
+import { rotateLogIfNeeded } from '../../services/log-rotation.js';
 import {
   isSamePathOrDescendant,
   readStateFile,
@@ -17,12 +18,14 @@ function createLogger(extensionDir: string, sessionDir?: string) {
   return (level: 'INFO' | 'WARN' | 'ERROR', message: string) => {
     const line = `[${new Date().toISOString()}] [CheckLimitJS] [${level}] ${message}\n`;
     try {
+      rotateLogIfNeeded(globalDebugLog);
       fs.appendFileSync(globalDebugLog, line);
     } catch {
       // Ignore logging failures.
     }
     if (sessionHooksLog) {
       try {
+        rotateLogIfNeeded(sessionHooksLog);
         fs.appendFileSync(sessionHooksLog, line);
       } catch {
         // Ignore logging failures.

@@ -23,7 +23,7 @@ function resolveDocPath(dir: string, baseName: string): string | undefined {
             const files = readdirSync(dir);
             const pattern = new RegExp(`^${baseName}_.*\\.md$`);
             // Sort files to get the most recent by date-stamp (assuming YYYY-MM-DD format)
-            const matches = files.filter(f => pattern.test(f)).sort().reverse();
+            const matches = files.filter((f: string) => pattern.test(f)).sort().reverse();
             if (matches.length > 0) return join(dir, matches[0]);
         } catch (e) {
             // Directory might not exist or be inaccessible
@@ -244,16 +244,20 @@ export async function buildPrompt(state: SessionState, task?: Task, overrides?: 
             else {
                 // PHASE: IMPLEMENTATION (effectivePhase === "implement")
                 const implementationPath = join(ticketDir, "implementation.md");
+                // Hard-block: plan_review MUST exist before implementation is allowed.
+                const missingPlanReview = !planReviewExists && !planApproved;
+                const missingDocs = !researchExists || !planExists || missingPlanReview;
                 phaseInstruction = `Phase: IMPLEMENTATION (Ticket: ${task.title}).
     Mission: You are a Morty Worker (but smarter). Your goal is to complete this ticket.
     Ticket Path: ${ticketPath}
-    ${(!researchExists || !planExists) ? `
-    CRITICAL ASSERTION FAILURE: MANDATORY DOCUMENTS MISSING.
-    ${!researchExists ? `- MISSING: ${researchPath}` : ""}
-    ${!planExists ? `- MISSING: ${planPath}` : ""}
+    ${missingDocs ? `
+    🚨 HARD STOP — IMPLEMENTATION BLOCKED 🚨
+    MANDATORY DOCUMENTS MISSING. YOU ARE FORBIDDEN FROM WRITING CODE.
+    ${!researchExists ? `- MISSING RESEARCH: ${researchPath}` : ""}
+    ${!planExists ? `- MISSING PLAN: ${planPath}` : ""}
+    ${missingPlanReview ? `- MISSING PLAN REVIEW: A plan_review.md must exist and be approved before implementation. Create the plan review at ${join(ticketDir, "plan_review.md")} with status PASS.` : ""}
 
-    YOU ARE FORBIDDEN FROM WRITING CODE.
-    ACTION: You MUST go back and create the missing documentation before you are allowed to touch the codebase.
+    ACTION: Return to the appropriate phase and create the missing documentation first.
     ` : `
     EXECUTION PROTOCOL:
     1. READ the ticket, research (${researchPath}) and plan (${planPath}).

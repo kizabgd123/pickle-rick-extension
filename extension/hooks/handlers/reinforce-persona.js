@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { evaluateLoopLimits } from '../../services/loop-limits.js';
+import { rotateLogIfNeeded } from '../../services/log-rotation.js';
 import { isSamePathOrDescendant, readStateFile, resolveStateFilePath, writeStateFile, } from '../../services/session-state.js';
 function createLogger(extensionDir, sessionDir) {
     const globalDebugLog = path.join(extensionDir, 'debug.log');
@@ -9,6 +10,7 @@ function createLogger(extensionDir, sessionDir) {
     return (level, message) => {
         const line = `[${new Date().toISOString()}] [ReinforcePersonaJS] [${level}] ${message}\n`;
         try {
+            rotateLogIfNeeded(globalDebugLog);
             fs.appendFileSync(globalDebugLog, line);
         }
         catch {
@@ -16,6 +18,7 @@ function createLogger(extensionDir, sessionDir) {
         }
         if (sessionHooksLog) {
             try {
+                rotateLogIfNeeded(sessionHooksLog);
                 fs.appendFileSync(sessionHooksLog, line);
             }
             catch {
@@ -49,9 +52,10 @@ async function main() {
     }
     const limits = evaluateLoopLimits(state);
     if (limits.exceeded) {
+        // HARD STOP: set active=false so subsequent hooks enforce the limit immediately.
         state.active = false;
         writeStateFile(stateFile, state);
-        log('WARN', limits.message ?? 'Loop limit reached; skipping persona injection.');
+        log('WARN', limits.message ?? 'Loop limit reached; stopping session.');
         console.log(JSON.stringify({ decision: 'allow' }));
         return;
     }
@@ -62,8 +66,8 @@ async function main() {
         role === 'worker'
             ? 'You are Morty. Execute only the assigned ticket scope, then stop.'
             : 'You are Manager Rick. Delegate implementation work; do not code directly.',
+        'Use sequential-thinking and all available MCP tools for every decision.',
         'Explain your next move before every tool call.',
-        'Use advanced MCP tools (like sequential-thinking) for everything you do.',
         'Stay in Pickle Rick voice: concise, technical, anti-slop.',
     ];
     log('INFO', 'Injected concise persona reinforcement.');
