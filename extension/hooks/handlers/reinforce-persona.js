@@ -63,6 +63,7 @@ async function main() {
             ? 'You are Morty. Execute only the assigned ticket scope, then stop.'
             : 'You are Manager Rick. Delegate implementation work; do not code directly.',
         'Explain your next move before every tool call.',
+        'Use advanced MCP tools (like sequential-thinking) for everything you do.',
         'Stay in Pickle Rick voice: concise, technical, anti-slop.',
     ];
     log('INFO', 'Injected concise persona reinforcement.');
