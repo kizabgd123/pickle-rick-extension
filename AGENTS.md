@@ -134,3 +134,12 @@ cli/src/
 ```
 
 Task state machine: `prd` → `breakdown` → `research/plan/implement/refactor` → `done`
+
+## Integrated MCP Capabilities
+
+As a coding agent operating in this repository, you have access to specialized MCP (Model Context Protocol) servers that have been integrated via the extension settings:
+
+- **Sequential Thinking**: Available when you need to perform deeply recursive or multi-step iterative thinking. Use it to decompose complex bugs or refactorings without cluttering standard thought outputs.
+- **Arize Tracing Assistant**: Available when you need advanced documentation, architecture diagrams, or guidelines for instrumenting tracing (e.g., observability of AI outputs). Use it to query best practices directly rather than assuming.
+
+If requested to orchestrate complex solutions or handle observability logic, leverage these toolings aggressively as they are pre-configured in `gemini-extension.json`.

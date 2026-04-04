@@ -27,6 +27,9 @@ jar/
 worktrees/
 current_sessions.json
 debug.log
+debug.log.*
+logs/
+friction_patterns.json
 
 # OS
 .DS_Store

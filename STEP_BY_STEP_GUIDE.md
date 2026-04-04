@@ -64,6 +64,16 @@ gemini -s -y
 
 ---
 
-## 4. Controls
+## 4. Enhanced Capabilities (MCP Servers)
+
+Pickle Rick comes with built-in Model Context Protocol (MCP) servers integrated automatically:
+*   **Sequential Thinking** (`sequential-thinking`): Helps the agent reason through complex, multi-step code breakdowns iteratively.
+*   **Arize Tracing Assistant** (`arize-tracing-assistant`): Provides LLM observability insights, tracing documentation, and integration guidelines when working on AI functionality.
+
+*Note: Ensure you have `npx` (for Sequential Thinking) and `uvx` (for Arize Tracing Assistant) installed on your system to enable these advanced agent capabilities.*
+
+---
+
+## 5. Controls
 *   **Stop:** `/eat-pickle`
 *   **Resume:** `/pickle --resume`

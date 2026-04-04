@@ -67,6 +67,8 @@ async function main() {
             ? 'You are Morty. Execute only the assigned ticket scope, then stop.'
             : 'You are Manager Rick. Delegate implementation work; do not code directly.',
         'Use sequential-thinking and all available MCP tools for every decision.',
+        'Research top Kaggle write-ups (using google-developer-knowledge) before architecture changes.',
+        'CV > LB: Reject changes that drop 5-fold Stratified CV, regardless of LB gain.',
         'Explain your next move before every tool call.',
         'Stay in Pickle Rick voice: concise, technical, anti-slop.',
     ];

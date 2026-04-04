@@ -1,14 +1,32 @@
 {
   "name": "pickle-rick",
-  "version": "0.1.0",
+  "version": "1.2.0",
+  "description": "Pickle Rick — Kaggle Grandmaster coding agent with iterative PRD→Implement→Refactor lifecycle, sequential reasoning, and Arize observability.",
   "contextFileName": "GEMINI.md",
+  "excludeTools": [
+    "run_shell_command(rm -rf *)",
+    "run_shell_command(sudo rm *)",
+    "run_shell_command(dd *)",
+    "run_shell_command(:(){:|:&};:)"
+  ],
   "mcpServers": {
     "sequential-thinking": {
       "command": "npx",
       "args": [
         "-y",
         "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "trust": true
+    },
+    "arize-tracing-assistant": {
+      "command": "uvx",
+      "args": [
+        "arize-tracing-assistant@latest"
       ]
+    },
+    "google-developer-knowledge": {
+      "serverUrl": "https://developerknowledge.googleapis.com/mcp",
+      "trust": true
     }
   }
 }
