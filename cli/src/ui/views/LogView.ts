@@ -28,8 +28,8 @@ export class LogView {
   private lines: LogLine[] = [];
   private textRenderable: TextRenderable;
   private scrollBox: ScrollBoxRenderable;
-  private readonly MAX_LINES = 8000; // Allow deeper backscroll before truncation
-  private readonly RENDER_CHUNK_SIZE = this.MAX_LINES; // Render everything we keep so older iterations stay visible
+  private readonly MAX_LINES = 1000; // Allow deeper backscroll before truncation
+  private readonly RENDER_CHUNK_SIZE = 500; // Render everything we keep so older iterations stay visible
   private updateTimeout: ReturnType<typeof setTimeout> | null = null;
   private onNewLines?: () => void;
   private lastUpdateTime: number = 0;
@@ -70,7 +70,7 @@ export class LogView {
       width: "100%",
       height: "auto",
       content: "[ Initializing Log View... ]",
-      fg: THEME.dim,
+      fg: THEME.dim, wrapMode: "word",
     });
     this.scrollBox.add(this.textRenderable);
     this.root.add(this.scrollBox);

@@ -24,8 +24,8 @@ export async function createDashboard(renderer: CliRenderer, initialPrompt?: str
     height: "100%",
     flexDirection: "column",
     backgroundColor: THEME.bg,
-    paddingLeft: 4,
-    paddingRight: 4,
+    paddingLeft: 1,
+    paddingRight: 1,
   });
 
   const mouseParser = new MouseParser();
