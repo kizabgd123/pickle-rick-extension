@@ -69,7 +69,7 @@ export async function createLandingView(
 
   const inputContainer = new BoxRenderable(renderer, {
     id: "landing-input-container",
-    width: "90%", maxWidth: 106,
+    width: "90%", maxWidth: 75,
     minHeight: 5,
     flexDirection: "column",
     backgroundColor: THEME.surface,
@@ -151,7 +151,7 @@ export async function createLandingView(
 
   const footerHints = new BoxRenderable(renderer, {
     id: "landing-footer-hints",
-    width: "90%", maxWidth: 106,
+    width: "90%", maxWidth: 75,
     flexDirection: "row",
     justifyContent: "flex-end",
     marginTop: 1,
