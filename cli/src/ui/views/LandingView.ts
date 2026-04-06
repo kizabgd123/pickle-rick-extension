@@ -61,7 +61,7 @@ export async function createLandingView(
     headerContainer.add(
       new TextRenderable(renderer, {
         id: `landing-header-line-${i}`,
-        content: line.trimEnd(),
+        content: line.trimEnd(), wrapMode: "none",
         fg: color,
       })
     );
@@ -69,7 +69,7 @@ export async function createLandingView(
 
   const inputContainer = new BoxRenderable(renderer, {
     id: "landing-input-container",
-    width: 80,
+    width: "90%", maxWidth: 106,
     minHeight: 5,
     flexDirection: "column",
     backgroundColor: THEME.surface,
@@ -151,7 +151,7 @@ export async function createLandingView(
 
   const footerHints = new BoxRenderable(renderer, {
     id: "landing-footer-hints",
-    width: 80,
+    width: "90%", maxWidth: 106,
     flexDirection: "row",
     justifyContent: "flex-end",
     marginTop: 1,

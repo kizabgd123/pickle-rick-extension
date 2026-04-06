@@ -30,7 +30,7 @@
   },
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build src/index.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/pickle && bun build src/services/execution/worker-executor.ts --minify --target=bun --outfile dist/worker-executor.js",
+    "build": "bun build src/index.ts --compile --minify --target=bun --outfile dist/pickle && bun build src/services/execution/worker-executor.ts --minify --target=bun --outfile dist/worker-executor.js",
     "check": "tsc --noEmit",
     "prepublishOnly": "bun run check && bun run build"
   },
