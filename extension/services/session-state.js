@@ -168,6 +168,7 @@ export function readStateFile(stateFile) {
             session_dir: typeof raw.session_dir === 'string' ? raw.session_dir : path.dirname(normalizePath(stateFile)),
             jar_complete: raw.jar_complete === true,
             worker: raw.worker === true,
+            no_spawning: raw.no_spawning === true,
         };
         return state;
     }

@@ -117,6 +117,15 @@ export async function spawn_cmd(cmd, options = {}) {
     });
 }
 export function getExtensionRoot() {
+    const __dirname = path.dirname(new URL(import.meta.url).pathname);
+    const localRoot = path.resolve(__dirname, '../../');
+    if (fs.existsSync(path.join(localRoot, 'gemini-extension.json'))) {
+        return localRoot;
+    }
+    const cwd = process.cwd();
+    if (fs.existsSync(path.join(cwd, 'gemini-extension.json'))) {
+        return cwd;
+    }
     return path.join(os.homedir(), '.gemini/extensions/pickle-rick');
 }
 export function getSessionDir() {

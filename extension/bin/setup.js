@@ -250,6 +250,7 @@ async function main() {
             start_time_epoch: startEpoch,
             completion_promise: args.provided.completionPromise ? (args.completionPromise ?? null) : null,
             original_prompt: task,
+            no_spawning: args.no_spawning || false,
             current_ticket: null,
             history: [],
             started_at: new Date().toISOString(),

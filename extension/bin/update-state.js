@@ -17,7 +17,7 @@ const NUMERIC_KEYS = new Set([
     'worker_timeout_seconds',
     'start_time_epoch',
 ]);
-const BOOLEAN_KEYS = new Set(['active', 'jar_complete', 'worker']);
+const BOOLEAN_KEYS = new Set(['active', 'jar_complete', 'worker', 'no_spawning']);
 const NULLABLE_KEYS = new Set(['completion_promise', 'current_ticket']);
 const STRING_KEYS = new Set(['step', 'working_dir', 'original_prompt']);
 function parseStateValue(key, rawValue) {
